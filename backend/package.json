@@ -1,0 +1,19 @@
+{
+  "name": "debtsettler-backend",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node20 --outfile=dist/index.js --format=cjs",
+    "package": "npm run build && cd dist && zip -r ../lambda.zip .",
+    "deploy": "npm run package && AWS_PROFILE=mishu-websites aws lambda update-function-code --function-name debtsettler-api-prod --zip-file fileb://lambda.zip --region eu-central-1"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.500.0",
+    "@aws-sdk/lib-dynamodb": "^3.500.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.131",
+    "@types/node": "^20.11.0",
+    "esbuild": "^0.20.0",
+    "typescript": "^5.3.3"
+  }
+}

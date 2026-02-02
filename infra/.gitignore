@@ -1,0 +1,31 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+# Note: .terraform.lock.hcl SHOULD be committed (Terraform recommendation)
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+*.auto.tfvars
+
+# Secrets (NEVER commit these)
+secrets.tfvars
+*.secrets.tfvars*
+secrets.tfvars.example
+
+# IDE
+.idea/
+*.swp
+*.swo
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak

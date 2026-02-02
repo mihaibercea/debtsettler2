@@ -1,0 +1,56 @@
+# -----------------------------------------------------------------------------
+# Example Terraform Variables
+# -----------------------------------------------------------------------------
+# This file shows all available configuration options.
+# The actual values are in terraform.tfvars (not secrets).
+# Secrets go in secrets.tfvars (gitignored).
+# -----------------------------------------------------------------------------
+
+# General Configuration
+aws_region   = "eu-central-1"
+environment  = "prod"
+project_name = "debtsettler"
+
+# Custom Domain (DNS records will be created manually in GoDaddy)
+custom_domain = "debtsettler.mihaibercea.com"
+
+# Cognito Configuration
+cognito_user_pool_name = "debtsettler-users"
+enable_google_idp      = true
+
+# OAuth callback/logout URLs
+callback_urls = [
+  "http://localhost:3000/callback",
+  "http://localhost:5173/callback",
+  "https://debtsettler.mihaibercea.com/callback"
+]
+
+logout_urls = [
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "https://debtsettler.mihaibercea.com"
+]
+
+# DynamoDB Configuration
+dynamodb_table_name   = "DebtSettler"
+dynamodb_billing_mode = "PAY_PER_REQUEST"
+
+# Lambda Configuration
+lambda_runtime            = "nodejs20.x"
+lambda_memory_size        = 256
+lambda_timeout            = 30
+lambda_log_retention_days = 14
+
+# CloudFront Configuration
+cloudfront_price_class = "PriceClass_100"
+
+# Additional allowed origins for CORS
+allowed_origins = [
+  "https://debtsettler.mihaibercea.com"
+]
+
+# -----------------------------------------------------------------------------
+# SECRETS (put these in secrets.tfvars, NOT here)
+# -----------------------------------------------------------------------------
+# google_client_id     = "xxx.apps.googleusercontent.com"
+# google_client_secret = "xxx"
