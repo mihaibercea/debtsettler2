@@ -57,6 +57,13 @@ function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 }
 
+function shuffle<T>(arr: T[]): void {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+
 // Settlement algorithm
 function computeSettlement(participants: Participant[]): Transfer[] {
   const creditors: { name: string; amount: number }[] = [];
@@ -70,8 +77,8 @@ function computeSettlement(participants: Participant[]): Transfer[] {
     }
   }
 
-  creditors.sort((a, b) => b.amount - a.amount);
-  debtors.sort((a, b) => b.amount - a.amount);
+  shuffle(creditors);
+  shuffle(debtors);
 
   const transfers: Transfer[] = [];
   let transferId = 1;
@@ -341,37 +348,45 @@ async function handleUpdateSession(
 }
 
 async function handleDeleteSession(userId: string, sessionId: string): Promise<APIGatewayProxyResultV2> {
-  // Get all items for this session
-  const allItems = await docClient.send(
-    new QueryCommand({
-      TableName: TABLE_NAME,
-      KeyConditionExpression: 'PK = :pk',
-      FilterExpression: 'sessionId = :sessionId OR begins_with(SK, :sessionSk)',
-      ExpressionAttributeValues: {
-        ':pk': `USER#${userId}`,
-        ':sessionId': sessionId,
-        ':sessionSk': `SESSION#${sessionId}`,
-      },
-    })
-  );
+  const pk = `USER#${userId}`;
 
-  if (!allItems.Items || allItems.Items.length === 0) {
+  // Fetch session metadata, participant items, and result items separately
+  const [sessionItems, participantItems, resultItems] = await Promise.all([
+    docClient.send(new QueryCommand({
+      TableName: TABLE_NAME,
+      KeyConditionExpression: 'PK = :pk AND SK = :sk',
+      ExpressionAttributeValues: { ':pk': pk, ':sk': `SESSION#${sessionId}` },
+    })),
+    docClient.send(new QueryCommand({
+      TableName: TABLE_NAME,
+      KeyConditionExpression: 'PK = :pk AND begins_with(SK, :sk)',
+      ExpressionAttributeValues: { ':pk': pk, ':sk': `ITEM#${sessionId}#` },
+    })),
+    docClient.send(new QueryCommand({
+      TableName: TABLE_NAME,
+      KeyConditionExpression: 'PK = :pk AND begins_with(SK, :sk)',
+      ExpressionAttributeValues: { ':pk': pk, ':sk': `RESULT#${sessionId}#` },
+    })),
+  ]);
+
+  if (!sessionItems.Items || sessionItems.Items.length === 0) {
     return response(404, { message: 'Session not found' });
   }
 
-  // Delete all items
-  const deleteRequests = allItems.Items.map((item) => ({
-    DeleteRequest: {
-      Key: { PK: item.PK, SK: item.SK },
-    },
+  const allItems = [
+    ...(sessionItems.Items || []),
+    ...(participantItems.Items || []),
+    ...(resultItems.Items || []),
+  ];
+
+  const deleteRequests = allItems.map((item) => ({
+    DeleteRequest: { Key: { PK: item.PK, SK: item.SK } },
   }));
 
   for (let i = 0; i < deleteRequests.length; i += 25) {
     await docClient.send(
       new BatchWriteCommand({
-        RequestItems: {
-          [TABLE_NAME]: deleteRequests.slice(i, i + 25),
-        },
+        RequestItems: { [TABLE_NAME]: deleteRequests.slice(i, i + 25) },
       })
     );
   }
@@ -379,7 +394,7 @@ async function handleDeleteSession(userId: string, sessionId: string): Promise<A
   return response(200, { message: 'Session deleted' });
 }
 
-async function handleSettle(userId: string, sessionId: string): Promise<APIGatewayProxyResultV2> {
+async function handleSettle(userId: string, sessionId: string, body: string | undefined): Promise<APIGatewayProxyResultV2> {
   // Get session
   const sessionResult = await docClient.send(
     new GetCommand({
@@ -395,26 +410,32 @@ async function handleSettle(userId: string, sessionId: string): Promise<APIGatew
     return response(404, { message: 'Session not found' });
   }
 
-  // Get participants
-  const participantsResult = await docClient.send(
-    new QueryCommand({
-      TableName: TABLE_NAME,
-      KeyConditionExpression: 'PK = :pk AND begins_with(SK, :sk)',
-      ExpressionAttributeValues: {
-        ':pk': `USER#${userId}`,
-        ':sk': `ITEM#${sessionId}#`,
-      },
-    })
-  );
+  // Use frontend-provided transfers if supplied, otherwise compute from participants
+  const parsed = body ? JSON.parse(body) : {};
+  let transfers: Transfer[];
 
-  const participants: Participant[] = (participantsResult.Items || []).map((item) => ({
-    id: item.itemId,
-    name: item.name,
-    amount: item.amount,
-  }));
+  if (parsed.transfers && Array.isArray(parsed.transfers) && parsed.transfers.length > 0) {
+    transfers = parsed.transfers;
+  } else {
+    const participantsResult = await docClient.send(
+      new QueryCommand({
+        TableName: TABLE_NAME,
+        KeyConditionExpression: 'PK = :pk AND begins_with(SK, :sk)',
+        ExpressionAttributeValues: {
+          ':pk': `USER#${userId}`,
+          ':sk': `ITEM#${sessionId}#`,
+        },
+      })
+    );
 
-  // Compute settlement
-  const transfers = computeSettlement(participants);
+    const participants: Participant[] = (participantsResult.Items || []).map((item) => ({
+      id: item.itemId,
+      name: item.name,
+      amount: item.amount,
+    }));
+
+    transfers = computeSettlement(participants);
+  }
 
   // Delete existing results
   const existingResults = await docClient.send(
@@ -480,6 +501,63 @@ async function handleSettle(userId: string, sessionId: string): Promise<APIGatew
   return response(200, { transfers });
 }
 
+async function handleReopenSession(userId: string, sessionId: string): Promise<APIGatewayProxyResultV2> {
+  // Get session
+  const sessionResult = await docClient.send(
+    new GetCommand({
+      TableName: TABLE_NAME,
+      Key: {
+        PK: `USER#${userId}`,
+        SK: `SESSION#${sessionId}`,
+      },
+    })
+  );
+
+  if (!sessionResult.Item) {
+    return response(404, { message: 'Session not found' });
+  }
+
+  // Delete all stored result items
+  const existingResults = await docClient.send(
+    new QueryCommand({
+      TableName: TABLE_NAME,
+      KeyConditionExpression: 'PK = :pk AND begins_with(SK, :sk)',
+      ExpressionAttributeValues: {
+        ':pk': `USER#${userId}`,
+        ':sk': `RESULT#${sessionId}#`,
+      },
+    })
+  );
+
+  if (existingResults.Items && existingResults.Items.length > 0) {
+    const deleteRequests = existingResults.Items.map((item) => ({
+      DeleteRequest: { Key: { PK: item.PK, SK: item.SK } },
+    }));
+
+    for (let i = 0; i < deleteRequests.length; i += 25) {
+      await docClient.send(
+        new BatchWriteCommand({
+          RequestItems: { [TABLE_NAME]: deleteRequests.slice(i, i + 25) },
+        })
+      );
+    }
+  }
+
+  // Reset session status to draft
+  await docClient.send(
+    new PutCommand({
+      TableName: TABLE_NAME,
+      Item: {
+        ...sessionResult.Item,
+        status: 'draft',
+        updatedAt: new Date().toISOString(),
+      },
+    })
+  );
+
+  return response(200, { message: 'Session reopened' });
+}
+
 // Main handler
 export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => {
   console.log('Event:', JSON.stringify(event, null, 2));
@@ -521,7 +599,11 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
 
       case 'POST /api/sessions/{sessionId}/settle':
         if (!sessionId) return response(400, { message: 'Session ID required' });
-        return handleSettle(userId, sessionId);
+        return handleSettle(userId, sessionId, body);
+
+      case 'POST /api/sessions/{sessionId}/reopen':
+        if (!sessionId) return response(400, { message: 'Session ID required' });
+        return handleReopenSession(userId, sessionId);
 
       default:
         return response(404, { message: 'Not found' });

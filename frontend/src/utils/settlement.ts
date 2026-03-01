@@ -1,7 +1,14 @@
 import { Participant, Transfer } from '../types';
 
+function shuffle<T>(arr: T[]): void {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+
 /**
- * Settlement algorithm: computes minimum transfers to settle all debts
+ * Settlement algorithm: computes transfers to settle all debts using random pairing.
  * 
  * Input: list of participants with amounts
  * - amount > 0: creditor (should receive money)
@@ -27,9 +34,9 @@ export function computeSettlement(participants: Participant[]): Transfer[] {
     }
   }
 
-  // Sort by amount (descending) for greedy matching
-  creditors.sort((a, b) => b.amount - a.amount);
-  debtors.sort((a, b) => b.amount - a.amount);
+  // Shuffle randomly for varied settlement pairings
+  shuffle(creditors);
+  shuffle(debtors);
 
   const transfers: Transfer[] = [];
   let transferId = 1;

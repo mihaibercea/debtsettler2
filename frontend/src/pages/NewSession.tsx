@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createSession } from '../services/api';
 import ParticipantForm from '../components/ParticipantForm';
@@ -16,6 +16,7 @@ export default function NewSession() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
+  const [seed, setSeed] = useState(() => Math.random());
 
   const validation = validateBalances(participants);
   const validParticipants = participants.filter(p => p.name.trim() !== '');
@@ -53,7 +54,10 @@ export default function NewSession() {
     }
   }
 
-  const transfers = validation.valid ? computeSettlement(validParticipants) : [];
+  const participantKey = validParticipants.map(p => `${p.name}:${p.amount}`).join(',');
+  // Re-randomize when participants change or when the user requests a new shuffle via seed
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const transfers = useMemo(() => validation.valid ? computeSettlement(validParticipants) : [], [seed, participantKey]);
 
   return (
     <div>
@@ -122,16 +126,30 @@ export default function NewSession() {
 
         {validation.valid && validParticipants.length >= 2 && (
           <div className="bg-white rounded-lg border border-gray-200 p-6">
-            <button
-              type="button"
-              onClick={() => setShowPreview(!showPreview)}
-              className="flex items-center text-lg font-semibold text-gray-900"
-            >
-              <svg className={`w-5 h-5 mr-2 transition-transform ${showPreview ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-              Preview Settlement ({transfers.length} transfers)
-            </button>
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setShowPreview(!showPreview)}
+                className="flex items-center text-lg font-semibold text-gray-900"
+              >
+                <svg className={`w-5 h-5 mr-2 transition-transform ${showPreview ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+                Preview Settlement ({transfers.length} transfers)
+              </button>
+              {showPreview && (
+                <button
+                  type="button"
+                  onClick={() => setSeed(Math.random())}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-primary-600 border border-primary-300 rounded-lg hover:bg-primary-50 transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Randomize Settlements
+                </button>
+              )}
+            </div>
             
             {showPreview && transfers.length > 0 && (
               <div className="mt-4 space-y-2">

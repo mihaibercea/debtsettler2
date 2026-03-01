@@ -72,10 +72,15 @@ export async function deleteSession(sessionId: string): Promise<void> {
   });
 }
 
-export async function settleSession(sessionId: string): Promise<{ transfers: Transfer[] }> {
+export async function settleSession(sessionId: string, transfers: Transfer[]): Promise<{ transfers: Transfer[] }> {
   return apiRequest<{ transfers: Transfer[] }>(`/sessions/${sessionId}/settle`, {
     method: 'POST',
+    body: JSON.stringify({ transfers }),
   });
+}
+
+export async function reopenSession(sessionId: string): Promise<void> {
+  await apiRequest(`/sessions/${sessionId}/reopen`, { method: 'POST' });
 }
 
 // Health check

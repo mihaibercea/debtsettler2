@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { getSession, settleSession, deleteSession } from '../services/api';
+import { getSession, settleSession, reopenSession, deleteSession } from '../services/api';
 import { Session } from '../types';
 import { computeSettlement } from '../utils/settlement';
 
@@ -10,7 +10,9 @@ export default function SessionPage() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [settling, setSettling] = useState(false);
+  const [reopening, setReopening] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [seed, setSeed] = useState(() => Math.random());
 
   useEffect(() => {
     if (sessionId) {
@@ -36,7 +38,7 @@ export default function SessionPage() {
     
     try {
       setSettling(true);
-      const result = await settleSession(sessionId);
+      const result = await settleSession(sessionId, localTransfers);
       setSession(prev => prev ? { 
         ...prev, 
         status: 'settled', 
@@ -46,6 +48,21 @@ export default function SessionPage() {
       setError(err instanceof Error ? err.message : 'Failed to settle session');
     } finally {
       setSettling(false);
+    }
+  }
+
+  async function handleReopen() {
+    if (!sessionId) return;
+
+    try {
+      setReopening(true);
+      await reopenSession(sessionId);
+      setSession(prev => prev ? { ...prev, status: 'draft', transfers: [] } : null);
+      setSeed(Math.random());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to reopen session');
+    } finally {
+      setReopening(false);
     }
   }
 
@@ -59,6 +76,13 @@ export default function SessionPage() {
       setError(err instanceof Error ? err.message : 'Failed to delete session');
     }
   }
+
+  const participants = Array.isArray(session?.participants) ? session.participants : [];
+  const sessionTransfers = Array.isArray(session?.transfers) ? session.transfers : [];
+  const participantKey = participants.map(p => `${p.name}:${p.amount}`).join(',');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const localTransfers = useMemo(() => computeSettlement(participants), [seed, participantKey]);
+  const transfers = sessionTransfers.length > 0 ? sessionTransfers : localTransfers;
 
   if (loading) {
     return (
@@ -78,11 +102,6 @@ export default function SessionPage() {
       </div>
     );
   }
-
-  const participants = Array.isArray(session.participants) ? session.participants : [];
-  const sessionTransfers = Array.isArray(session.transfers) ? session.transfers : [];
-  const localTransfers = computeSettlement(participants);
-  const transfers = sessionTransfers.length > 0 ? sessionTransfers : localTransfers;
 
   return (
     <div>
@@ -138,13 +157,25 @@ export default function SessionPage() {
             Settlement Transfers ({transfers.length})
           </h2>
           {session.status !== 'settled' && (
-            <button
-              onClick={handleSettle}
-              disabled={settling}
-              className="px-4 py-2 bg-green-500 text-white font-medium rounded-lg hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-            >
-              {settling ? 'Settling...' : 'Confirm Settlement'}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSeed(Math.random())}
+                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-primary-600 border border-primary-300 rounded-lg hover:bg-primary-50 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Randomize
+              </button>
+              <button
+                onClick={handleSettle}
+                disabled={settling}
+                className="px-4 py-2 bg-green-500 text-white font-medium rounded-lg hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+              >
+                {settling ? 'Settling...' : 'Confirm Settlement'}
+              </button>
+            </div>
           )}
         </div>
 
@@ -187,8 +218,18 @@ export default function SessionPage() {
         )}
 
         {session.status === 'settled' && (
-          <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg text-green-700 text-center">
-            This session has been settled!
+          <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center justify-between">
+            <span className="text-green-700 font-medium">This session has been settled!</span>
+            <button
+              onClick={handleReopen}
+              disabled={reopening}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-yellow-700 border border-yellow-400 rounded-lg hover:bg-yellow-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              {reopening ? 'Reopening...' : 'Reopen & Randomize'}
+            </button>
           </div>
         )}
       </div>

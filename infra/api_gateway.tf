@@ -109,6 +109,15 @@ resource "aws_apigatewayv2_route" "settle" {
   authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
 }
 
+# Reopen route
+resource "aws_apigatewayv2_route" "reopen" {
+  api_id             = aws_apigatewayv2_api.main.id
+  route_key          = "POST /api/sessions/{sessionId}/reopen"
+  target             = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
+}
+
 # Health check (no auth required)
 resource "aws_apigatewayv2_route" "health" {
   api_id    = aws_apigatewayv2_api.main.id
